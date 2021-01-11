@@ -41,8 +41,16 @@ POSSIBLE_INPUT_NODES = frozenset(
 )
 
 POSSIBLE_OUTPUT_NODES = frozenset(
-    ["action", "action_probs", "recurrent_out", "value_estimate"]
+    ["action", "action_probs", "recurrent_out", "value_estimate", "optimizer/value_estimate"]
 )
+
+OUTPUT_NODE_SETS = [
+    frozenset(["action"]),
+    frozenset(["optimizer/value_estimate"]),
+    frozenset(["action", "optimizer/value_estimate"])
+]
+
+OUTPUT_FILE_SUFFIX = ["_a", "_v", ""]
 
 MODEL_CONSTANTS = frozenset(
     [
@@ -73,19 +81,25 @@ def export_policy_model(
     :param graph: Tensorflow Graph for the policy
     :param sess: Tensorflow session for the policy
     """
-    frozen_graph_def = _make_frozen_graph(behavior_name, graph, sess)
-    if not os.path.exists(output_filepath):
-        os.makedirs(output_filepath)
-    # Save frozen graph
-    frozen_graph_def_path = model_path + "/frozen_graph_def.pb"
-    with gfile.GFile(frozen_graph_def_path, "wb") as f:
-        f.write(frozen_graph_def.SerializeToString())
+    idx : int
+    idx = 0
+    for outputNodes in OUTPUT_NODE_SETS:
+        frozen_graph_def = _make_frozen_graph(behavior_name, graph, outputNodes, sess)
+        if not os.path.exists(output_filepath):
+            os.makedirs(output_filepath)
+        # Save frozen graph
+        frozen_graph_def_path = model_path + "/frozen_graph_def.pb"
+        with gfile.GFile(frozen_graph_def_path, "wb") as f:
+            f.write(frozen_graph_def.SerializeToString())
 
-    # Convert to barracuda
-    if SerializationSettings.convert_to_barracuda:
-        tf2bc.convert(frozen_graph_def_path, f"{output_filepath}.nn")
-        logger.info(f"Exported {output_filepath}.nn")
-
+        print("saving file: " + f"{output_filepath}{OUTPUT_FILE_SUFFIX[idx]}.nn")
+        print("idx: " + str(idx))
+        # Convert to barracuda
+        if SerializationSettings.convert_to_barracuda:
+            tf2bc.convert(frozen_graph_def_path, f"{output_filepath}{OUTPUT_FILE_SUFFIX[idx]}.nn")
+            logger.info(f"Exported {output_filepath}{OUTPUT_FILE_SUFFIX[idx]}.nn")
+        idx = idx + 1
+        
     # Save to onnx too (if we were able to import it)
     if ONNX_EXPORT_ENABLED:
         if SerializationSettings.convert_to_onnx:
@@ -113,10 +127,10 @@ def export_policy_model(
 
 
 def _make_frozen_graph(
-    behavior_name: str, graph: tf.Graph, sess: tf.Session
+    behavior_name: str, graph: tf.Graph, possible_output_nodes: frozenset, sess: tf.Session
 ) -> tf.GraphDef:
     with graph.as_default():
-        target_nodes = ",".join(_process_graph(behavior_name, graph))
+        target_nodes = ",".join(_process_graph(behavior_name, possible_output_nodes, graph))
         graph_def = graph.as_graph_def()
         output_graph_def = graph_util.convert_variables_to_constants(
             sess, graph_def, target_nodes.replace(" ", "").split(",")
@@ -195,13 +209,13 @@ def _get_frozen_graph_node_names(frozen_graph_def: Any) -> Set[str]:
     return names
 
 
-def _process_graph(behavior_name: str, graph: tf.Graph) -> List[str]:
+def _process_graph(behavior_name: str, possible_output_nodes: frozenset, graph: tf.Graph) -> List[str]:
     """
     Gets the list of the output nodes present in the graph for inference
     :return: list of node names
     """
     all_nodes = [x.name for x in graph.as_graph_def().node]
-    nodes = [x for x in all_nodes if x in POSSIBLE_OUTPUT_NODES | MODEL_CONSTANTS]
+    nodes = [x for x in all_nodes if x in possible_output_nodes | MODEL_CONSTANTS]
     logger.info("List of nodes to export for behavior :" + behavior_name)
     for n in nodes:
         logger.info("\t" + n)

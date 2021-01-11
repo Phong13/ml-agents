@@ -38,11 +38,17 @@ class NNCheckpointManager:
         :param checkpoint: A checkpoint stored in checkpoint_list
         """
         file_path: str = checkpoint["file_path"]
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            logger.info(f"Removed checkpoint model {file_path}.")
-        else:
-            logger.info(f"Checkpoint at {file_path} could not be found.")
+        file_paths = [file_path]
+        if file_path.endswith(".nn"):
+            file_path = os.path.splitext("sample.txt")[0];
+            file_paths = [file_path + ".nn", file_path + "_a.nn", file_path + "_v.nn"]
+        
+        for fp in file_paths:
+            if os.path.exists(fp):
+                os.remove(fp)
+                logger.info(f"Removed checkpoint model {fp}.")
+            else:
+                logger.info(f"Checkpoint at {fp} could not be found.")
         return
 
     @classmethod

@@ -67,6 +67,9 @@ namespace Unity.MLAgents.Editor
             }
             EditorGUI.EndDisabledGroup();
 
+            EditorGUILayout.PropertyField(so.FindProperty("m_modelValueEst"), true);
+            EditorGUILayout.PropertyField(so.FindProperty("m_modelPolicyAndValueEst"), true);
+
             EditorGUI.indentLevel--;
             m_RequireReload = EditorGUI.EndChangeCheck();
             DisplayFailedModelChecks();

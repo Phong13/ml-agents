@@ -10,6 +10,7 @@ using Unity.MLAgents.Sensors.Reflection;
 using Unity.MLAgents.Demonstrations;
 using Unity.MLAgents.Policies;
 using UnityEngine.Serialization;
+using Unity.MLAgents.Inference;
 
 namespace Unity.MLAgents
 {
@@ -56,9 +57,10 @@ namespace Unity.MLAgents
             Array.Clear(storedVectorActions, 0, storedVectorActions.Length);
         }
 
-        public void CopyActions(ActionBuffers actionBuffers)
+        public void CopyActions(ActionBuffers actionBuffers, out float ve)
         {
             actionBuffers.PackActions(storedVectorActions);
+            ve = actionBuffers.valueEstimate;
         }
     }
 
@@ -167,14 +169,14 @@ namespace Unity.MLAgents
         /// easier. We will hook into the Serialization code and make sure that
         /// agentParameters.maxStep and this.maxStep are in sync.
         [Serializable]
-        internal struct AgentParameters
+        public struct AgentParameters
         {
             public int maxStep;
         }
 
         [SerializeField]
         [HideInInspector]
-        internal AgentParameters agentParameters;
+        public AgentParameters agentParameters;
         [SerializeField]
         [HideInInspector]
         internal bool hasUpgradedFromAgentParameters;
@@ -508,15 +510,20 @@ namespace Unity.MLAgents
             m_Info.reward = m_Reward;
             m_Info.done = true;
             m_Info.maxStepReached = doneReason == DoneReason.MaxStepReached;
+            if (m_Brain is RemotePolicy)
+            {
             if (collectObservationsSensor != null)
             {
                 // Make sure the latest observations are being passed to training.
                 collectObservationsSensor.Reset();
                 CollectObservations(collectObservationsSensor);
             }
-            // Request the last decision with no callbacks
-            // We request a decision so Python knows the Agent is done immediately
-            m_Brain?.RequestDecision(m_Info, sensors);
+                // Request the last decision with no callbacks
+                // We request a decision so Python knows the Agent is done immediately
+                if (modelNum == 0) m_Brain?.RequestDecision(m_Info, sensors);
+                else m_Brain?.RequestDecision(m_Info, sensors, modelNum);
+            }
+
             ResetSensors();
 
             // We also have to write any to any DemonstationStores so that they get the "done" flag.
@@ -570,7 +577,12 @@ namespace Unity.MLAgents
                 // If everything is the same, don't make any changes.
                 return;
             }
+
+            if (m_Brain is RemotePolicy)
+            {
             NotifyAgentDone(DoneReason.Disabled);
+            }
+
             m_PolicyFactory.Model = model;
             m_PolicyFactory.InferenceDevice = inferenceDevice;
             m_PolicyFactory.BehaviorName = behaviorName;
@@ -697,7 +709,7 @@ namespace Unity.MLAgents
         /// </remarks>
         /// <seealso cref="OnEpisodeBegin"/>
         /// <seealso cref="EpisodeInterrupted"/>
-        public void EndEpisode()
+        public virtual void EndEpisode()
         {
             EndEpisodeAndReset(DoneReason.DoneCalled);
         }
@@ -748,6 +760,7 @@ namespace Unity.MLAgents
         /// </remarks>
         public void RequestDecision()
         {
+            modelNum = 0;
             m_RequestDecision = true;
             RequestAction();
         }
@@ -1021,7 +1034,8 @@ namespace Unity.MLAgents
 
             using (TimerStack.Instance.Scoped("RequestDecision"))
             {
-                m_Brain.RequestDecision(m_Info, sensors);
+                if (modelNum == 0) m_Brain?.RequestDecision(m_Info, sensors);
+                else m_Brain?.RequestDecision(m_Info, sensors, modelNum);
             }
 
             // If we have any DemonstrationWriters, write the AgentInfo and sensors to them.
@@ -1289,8 +1303,58 @@ namespace Unity.MLAgents
                 ResetData();
             }
             var actions = m_Brain?.DecideAction() ?? new ActionBuffers();
-            m_Info.CopyActions(actions);
+            m_Info.CopyActions(actions, out m_valueEstimate);
             m_ActuatorManager.UpdateActions(actions);
+        }
+
+        //====================================================
+        /// <summary>
+        /// 0 for the policy
+        /// 1 for the value est
+        /// </summary>
+        int modelNum;
+        
+        public bool IsDone()
+        {
+            return m_Info.done;
+        }
+
+        float m_valueEstimate = 0f;
+
+        public float GetValueEstimate()
+        {
+            if (m_PolicyFactory.BehaviorType != BehaviorType.InferenceOnly)
+            {
+                Debug.LogError("Hacked in value estimate shoudl only be used for InferenceOnlyAgents. Not implemented for communicator agents.");
+            }
+
+            return m_valueEstimate;
+        }
+
+        public BehaviorParameters GetBehaviourParameters()
+        {
+            if (m_PolicyFactory == null) m_PolicyFactory = GetComponent<BehaviorParameters>();
+            return m_PolicyFactory;
+        }
+
+        public void CancelRequestDecision()
+        {
+            //Debug.Assert(Academy.Instance.IsIn_AgentPreStep, "CancelRequestDecision should only be called from Academy.AgentPreStep");
+            m_RequestDecision = false;
+            CancelRequestAction();
+        }
+
+        public void CancelRequestAction()
+        {
+            //Debug.Assert(Academy.Instance.IsIn_AgentPreStep, "CancelRequestAction should only be called from Academy.AgentPreStep");
+            m_RequestAction = false;
+        }
+
+        public void RequestDecision(int model)
+        {
+            m_RequestDecision = true;
+            RequestAction();
+            modelNum = model;
         }
     }
 }

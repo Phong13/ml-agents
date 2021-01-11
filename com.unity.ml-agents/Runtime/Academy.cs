@@ -28,7 +28,7 @@ namespace Unity.MLAgents
     /// <summary>
     /// Helper class to step the Academy during FixedUpdate phase.
     /// </summary>
-    internal class AcademyFixedUpdateStepper : MonoBehaviour
+    public class AcademyFixedUpdateStepper : MonoBehaviour
     {
         void FixedUpdate()
         {
@@ -104,7 +104,12 @@ namespace Unity.MLAgents
         /// The singleton Academy object.
         /// </summary>
         /// <value>Getting the instance initializes the Academy, if necessary.</value>
-        public static Academy Instance { get { return s_Lazy.Value; } }
+        public static Academy Instance { 
+            get {
+                if (!Application.isPlaying) Debug.LogError("Accessed academy when not playing. This is slow.");
+                return s_Lazy.Value; 
+            } 
+        }
 
         // Fields not provided in the Inspector.
 
@@ -219,9 +224,16 @@ namespace Unity.MLAgents
         /// </summary>
         Academy()
         {
+            System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+            sw.Start();
+            myGuid = System.Guid.NewGuid();
+            Debug.Log("Created new Academy: " + myGuid);
+            numTimesEnvironmentStepCalled = 0;
             Application.quitting += Dispose;
 
             LazyInitialize();
+            sw.Stop();
+            Debug.Log("Time to init academy " + sw.Elapsed);
         }
 
         /// <summary>
@@ -249,9 +261,31 @@ namespace Unity.MLAgents
                 return;
             }
 
+            // Destroy any old FixedUpdate steppers in the scene
+            {
+                Transform[] ts = (Transform[])Resources.FindObjectsOfTypeAll(typeof(Transform)); // Finds hidden steppers
+                foreach (var t in ts)
+                {
+                    if (t.GetComponent<AcademyFixedUpdateStepper>() != null)
+                    {
+                        Debug.Log("Found old FixedUpdateStepper. Destroying it.");
+                        if (Application.isPlaying)
+                        {
+                            GameObject.Destroy(t.gameObject);
+                        }
+                        else
+                        {
+                            GameObject.DestroyImmediate(t.gameObject);
+                        }
+                    }
+                }
+            }
+
+            if (Application.isPlaying) // Only create this if we are in playmode.
+            {
             m_StepperObject = new GameObject("AcademyFixedUpdateStepper");
             // Don't show this object in the hierarchy
-            m_StepperObject.hideFlags = HideFlags.HideInHierarchy;
+                //m_StepperObject.hideFlags = HideFlags.HideInHierarchy;
             m_FixedUpdateStepper = m_StepperObject.AddComponent<AcademyFixedUpdateStepper>();
             try
             {
@@ -259,6 +293,7 @@ namespace Unity.MLAgents
                 GameObject.DontDestroyOnLoad(m_StepperObject);
             }
             catch { }
+        }
         }
 
         /// <summary>
@@ -386,11 +421,15 @@ namespace Unity.MLAgents
                 );
             }
 
-            if (Communicator != null)
+            bool isInferenceOnlyTaggingComponent = IsInferenceOnlyTaggingComponentInScene();
+            isInferenceOnlyTaggingComponent = false;
+            if (Communicator != null && !isInferenceOnlyTaggingComponent)
             {
                 // We try to exchange the first message with Python. If this fails, it means
                 // no Python Process is ready to train the environment. In this case, the
                 //environment must use Inference.
+                System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+                sw.Start();
                 try
                 {
                     var unityRlInitParameters = Communicator.Initialize(
@@ -415,6 +454,8 @@ namespace Unity.MLAgents
                     );
                     Communicator = null;
                 }
+                sw.Stop();
+                Debug.Log("Time to attempt communications: " + sw.Elapsed);
             }
             if (Communicator != null)
             {
@@ -438,6 +479,8 @@ namespace Unity.MLAgents
             AgentAct = () => { };
             AgentForceReset = () => { };
             OnEnvironmentReset = () => { };
+            
+            AgentPrePreStep = i => { };            
         }
 
         static void OnQuitCommandReceived()
@@ -504,6 +547,9 @@ namespace Unity.MLAgents
         /// </summary>
         public void EnvironmentStep()
         {
+            numTimesEnvironmentStepCalled++;
+            _fixedUpdateStepCount++;
+
             // Check whether we're already in the middle of a step.
             // This shouldn't happen generally, but could happen if user code (e.g. CollectObservations)
             // that is called by EnvironmentStep() also calls EnvironmentStep(). This would result
@@ -526,7 +572,11 @@ namespace Unity.MLAgents
                     ForcedFullReset();
                 }
 
+                AgentPrePreStep?.Invoke(m_StepCount);
+
+                IsIn_AgentPreStep = true;
                 AgentPreStep?.Invoke(m_StepCount);
+                IsIn_AgentPreStep = false;
 
                 m_StepCount += 1;
                 m_TotalStepCount += 1;
@@ -630,6 +680,33 @@ namespace Unity.MLAgents
 
             // Reset the Lazy instance
             s_Lazy = new Lazy<Academy>(() => new Academy());
+        }
+
+// ====================================
+        public static int numTimesEnvironmentStepCalled;
+
+        /// <summary>
+        /// So I can do stuff before any of the agents. Not for Agents
+        /// </summary>
+        public event Action<int> AgentPrePreStep;
+
+        public bool IsIn_AgentPreStep
+        {
+            get; private set;
+        }
+
+        System.Guid myGuid;
+
+        /// <summary>
+        /// This is created because we don't use the Academy StepCount. It is not stepped until after the environment is reset and some PreStep functions are called.
+        /// This makes for very messy step tracking.
+        /// </summary>
+        public int _fixedUpdateStepCount = 0;
+
+        bool IsInferenceOnlyTaggingComponentInScene()
+        {
+            if (GameObject.FindObjectOfType<Academy_AllAgentsInference>() == null) return false;
+            return true;
         }
     }
 }

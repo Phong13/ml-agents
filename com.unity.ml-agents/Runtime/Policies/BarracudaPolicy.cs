@@ -30,8 +30,12 @@ namespace Unity.MLAgents.Policies
     /// </summary>
     internal class BarracudaPolicy : IPolicy
     {
-        protected ModelRunner m_ModelRunner;
+        protected ModelRunner m_ModelRunnerPolicy;
+        protected ModelRunner m_ModelRunnerValueEst;
+        protected ModelRunner m_ModelRunnerPolicyAndValueEst;
         ActionBuffers m_LastActionBuffer;
+
+        int _modelNum;
 
         int m_AgentId;
 
@@ -44,30 +48,76 @@ namespace Unity.MLAgents.Policies
         /// <inheritdoc />
         public BarracudaPolicy(
             ActionSpec actionSpec,
-            NNModel model,
+            NNModel modelPolicy,
+            NNModel modelValueEst,
+            NNModel modelPolicyAndValueEst,
             InferenceDevice inferenceDevice)
         {
-            var modelRunner = Academy.Instance.GetOrCreateModelRunner(model, actionSpec, inferenceDevice);
-            m_ModelRunner = modelRunner;
+            m_ModelRunnerPolicy = Academy.Instance.GetOrCreateModelRunner(modelPolicy, actionSpec, inferenceDevice);
+            if (modelValueEst != null)
+            {
+                m_ModelRunnerValueEst = Academy.Instance.GetOrCreateModelRunner(modelValueEst, actionSpec, inferenceDevice);
+            }
+            if (modelPolicyAndValueEst != null)
+            {
+                m_ModelRunnerPolicyAndValueEst = Academy.Instance.GetOrCreateModelRunner(modelPolicyAndValueEst, actionSpec, inferenceDevice);
+            }
+
             actionSpec.CheckNotHybrid();
             m_SpaceType = actionSpec.NumContinuousActions > 0 ? SpaceType.Continuous : SpaceType.Discrete;
         }
 
         /// <inheritdoc />
+        public void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum)
+        {
+            UnityEngine.Debug.Assert(modelNum <= 0 || modelNum <= 2);
+            m_AgentId = info.episodeId;
+            if (modelNum == 0)
+            {
+                m_ModelRunnerPolicy?.PutObservations(info, sensors);
+                _modelNum = 0;
+            }
+            else if (modelNum == 1)
+            {
+                UnityEngine.Debug.Assert(m_ModelRunnerValueEst != null, "Should do inference if no value est model");
+                m_ModelRunnerValueEst.PutObservations(info, sensors);
+                _modelNum = 1;
+            } else if (modelNum == 2)
+            {
+                UnityEngine.Debug.Assert(m_ModelRunnerPolicyAndValueEst != null, "Should do inference if no value est model");
+                m_ModelRunnerPolicyAndValueEst.PutObservations(info, sensors);
+                _modelNum = 2;
+            } else
+            {
+                UnityEngine.Debug.Assert(false);
+            }
+        }
+
         public void RequestDecision(AgentInfo info, List<ISensor> sensors)
         {
             m_AgentId = info.episodeId;
-            m_ModelRunner?.PutObservations(info, sensors);
+            ModelRunner mr;
+            if (_modelNum == 0) mr = m_ModelRunnerPolicy;
+            else if (_modelNum == 1) mr = m_ModelRunnerValueEst;
+            else mr = m_ModelRunnerPolicyAndValueEst;
+            mr?.PutObservations(info, sensors);
+            _modelNum = 0;
         }
 
         /// <inheritdoc />
         public ref readonly ActionBuffers DecideAction()
         {
-            m_ModelRunner?.DecideBatch();
-            var actions = m_ModelRunner?.GetAction(m_AgentId);
+            ModelRunner mr;
+            if (_modelNum == 0) mr = m_ModelRunnerPolicy;
+            else if (_modelNum == 1) mr = m_ModelRunnerValueEst;
+            else mr = m_ModelRunnerPolicyAndValueEst;
+
+            mr?.DecideBatch();
+            float valueEstimate = 0f;
+            var actions = mr?.GetAction(m_AgentId, out valueEstimate);
             if (m_SpaceType == SpaceType.Continuous)
             {
-                m_LastActionBuffer = new ActionBuffers(actions, Array.Empty<int>());
+                m_LastActionBuffer = new ActionBuffers(actions, Array.Empty<int>(), valueEstimate);
                 return ref m_LastActionBuffer;
             }
 

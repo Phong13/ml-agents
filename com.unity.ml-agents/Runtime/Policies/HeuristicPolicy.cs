@@ -139,5 +139,10 @@ namespace Unity.MLAgents.Policies
                 }
             }
         }
+
+        public void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -212,7 +212,10 @@ namespace Unity.MLAgents.Policies
                                 "Either assign a model, or change to a different Behavior Type."
                             );
                         }
-                        return new BarracudaPolicy(actionSpec, m_Model, m_InferenceDevice);
+                        
+                        Debug.Assert(m_modelValueEst != null, "Should have a value estimate model " + name);
+                        Debug.Assert(m_modelPolicyAndValueEst != null, "Should have a policyAndValueEstimate model " + name);
+                        return new BarracudaPolicy(actionSpec, m_Model, m_modelValueEst, m_modelPolicyAndValueEst, m_InferenceDevice);
                     }
                 case BehaviorType.Default:
                     if (Academy.Instance.IsCommunicatorOn)
@@ -221,7 +224,8 @@ namespace Unity.MLAgents.Policies
                     }
                     if (m_Model != null)
                     {
-                        return new BarracudaPolicy(actionSpec, m_Model, m_InferenceDevice);
+                        Debug.Assert(m_modelValueEst != null, "Should have a value estimate model");
+                        return new BarracudaPolicy(actionSpec, m_Model, m_modelValueEst, m_modelPolicyAndValueEst, m_InferenceDevice);
                     }
                     else
                     {
@@ -241,5 +245,11 @@ namespace Unity.MLAgents.Policies
             }
             agent.ReloadPolicy();
         }
+
+        [Tooltip("Hack to support some models using 'value_estimate' and some using 'optimizer/value_estimate'")]
+        public NNModel m_modelValueEst;
+
+        [Tooltip("Hack to support some models using 'value_estimate' and some using 'optimizer/value_estimate'")]
+        public NNModel m_modelPolicyAndValueEst;
     }
 }

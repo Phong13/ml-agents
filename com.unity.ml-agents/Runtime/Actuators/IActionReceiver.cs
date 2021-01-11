@@ -47,7 +47,7 @@ namespace Unity.MLAgents.Actuators
         /// <param name="continuousActions">The continuous actions to send to an <see cref="IActionReceiver"/>.</param>
         /// <param name="discreteActions">The discrete actions to send to an <see cref="IActionReceiver"/>.</param>
         public ActionBuffers(float[] continuousActions, int[] discreteActions)
-            : this(new ActionSegment<float>(continuousActions), new ActionSegment<int>(discreteActions)) { }
+            : this(new ActionSegment<float>(continuousActions), new ActionSegment<int>(discreteActions), 0f) { }
 
         /// <summary>
         /// Construct an <see cref="ActionBuffers"/> instance with the continuous and discrete actions that will
@@ -57,6 +57,7 @@ namespace Unity.MLAgents.Actuators
         /// <param name="discreteActions">The discrete actions to send to an <see cref="IActionReceiver"/>.</param>
         public ActionBuffers(ActionSegment<float> continuousActions, ActionSegment<int> discreteActions)
         {
+            valueEstimate = 0f;
             ContinuousActions = continuousActions;
             DiscreteActions = discreteActions;
         }
@@ -131,6 +132,20 @@ namespace Unity.MLAgents.Actuators
                     DiscreteActions.Length);
             }
         }
+
+//-----------------------------------
+        public readonly float valueEstimate;
+
+        public ActionBuffers(float[] continuousActions, int[] discreteActions, float va)
+            : this(new ActionSegment<float>(continuousActions), new ActionSegment<int>(discreteActions), va) { }
+
+        public ActionBuffers(ActionSegment<float> continuousActions, ActionSegment<int> discreteActions, float ve)
+        {
+            valueEstimate = ve;
+            ContinuousActions = continuousActions;
+            DiscreteActions = discreteActions;
+        }
+//-----------------------------------
     }
 
     /// <summary>

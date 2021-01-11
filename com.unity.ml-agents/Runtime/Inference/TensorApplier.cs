@@ -90,6 +90,12 @@ namespace Unity.MLAgents.Inference
         {
             foreach (var tensor in tensors)
             {
+                if (tensor.name.Equals(TensorNames.ValueEstimateOutput) ||
+                    tensor.name.Equals(ModelRunner.ValueEstimateOutputOptimizer))
+                {
+                    continue;
+                }
+
                 if (!m_Dict.ContainsKey(tensor.name))
                 {
                     throw new UnityAgentsException(

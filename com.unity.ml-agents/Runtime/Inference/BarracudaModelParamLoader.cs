@@ -91,7 +91,7 @@ namespace Unity.MLAgents.Inference
         /// The Barracuda engine model for loading static parameters
         /// </param>
         /// <returns>TensorProxy IEnumerable with the expected Tensor outputs</returns>
-        public static string[] GetOutputNames(Model model)
+        public static string[] GetOutputNames(Model model, bool hasAction, bool hasValueEst, bool hasValueEstOptimizer)
         {
             var names = new List<string>();
 
@@ -100,7 +100,9 @@ namespace Unity.MLAgents.Inference
                 return names.ToArray();
             }
 
-            names.Add(TensorNames.ActionOutput);
+            if (hasAction) names.Add(TensorNames.ActionOutput);
+            if (hasValueEst) names.Add(TensorNames.ValueEstimateOutput);
+            if (hasValueEstOptimizer) names.Add(ModelRunner.ValueEstimateOutputOptimizer);
 
             var memory = (int)model.GetTensorByName(TensorNames.MemorySize)[0];
             if (memory > 0)

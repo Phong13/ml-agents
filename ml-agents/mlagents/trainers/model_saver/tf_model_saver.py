@@ -157,9 +157,23 @@ class TFModelSaver(BaseModelSaver):
         final_model_name = os.path.splitext(source_nn_path)[0]
 
         if SerializationSettings.convert_to_barracuda:
+            source_path = f"{final_model_name}_a.nn"
+            if os.path.isfile(source_path):
+                destination_path = f"{self.model_path}_a.nn"
+                shutil.copyfile(source_path, destination_path)
+            
+            source_path = f"{final_model_name}_v.nn"
+            if os.path.isfile(source_path):
+                source_path = f"{final_model_name}_v.nn"
+                destination_path = f"{self.model_path}_v.nn"
+                shutil.copyfile(source_path, destination_path)
+            
             source_path = f"{final_model_name}.nn"
-            destination_path = f"{self.model_path}.nn"
-            shutil.copyfile(source_path, destination_path)
+            if os.path.isfile(source_path):
+                source_path = f"{final_model_name}.nn"
+                destination_path = f"{self.model_path}.nn"
+                shutil.copyfile(source_path, destination_path)
+            
             logger.info(f"Copied {source_path} to {destination_path}.")
 
         if SerializationSettings.convert_to_onnx:

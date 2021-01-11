@@ -11,7 +11,7 @@ namespace Unity.MLAgents.Sensors
     {
         // TODO use float[] instead
         // TODO allow setting float[]
-        List<float> m_Observations;
+        public List<float> m_Observations;
         int[] m_Shape;
         string m_Name;
 

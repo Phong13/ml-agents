@@ -57,5 +57,10 @@ namespace Unity.MLAgents.Policies
         public void Dispose()
         {
         }
+        
+         public void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum)
+        {
+            throw new NotImplementedException("Remote policy does not support models other than the Policy");
+        }        
     }
 }

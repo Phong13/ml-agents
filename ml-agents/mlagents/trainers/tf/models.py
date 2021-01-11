@@ -713,7 +713,11 @@ class ModelUtils:
         """
         value_heads = {}
         for name in stream_names:
-            value = tf.layers.dense(hidden_input, 1, name=f"{name}_value")
-            value_heads[name] = value
+            value = tf.layers.dense(hidden_input, 1, name="{}_value".format(name))
+            if (name == "extrinsic"):
+                value_heads[name] = tf.identity(value, name="value_estimate")
+            else:
+                value_heads[name] = value
+            
         value = tf.reduce_mean(list(value_heads.values()), 0)
         return value_heads, value
