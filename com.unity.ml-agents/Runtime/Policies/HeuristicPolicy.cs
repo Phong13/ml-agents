@@ -41,7 +41,7 @@ namespace Unity.MLAgents.Policies
         }
 
         /// <inheritdoc />
-        public ref readonly ActionBuffers DecideAction()
+        public ref readonly ActionBuffers DecideAction(out float valueEstimate)
         {
             if (!m_Done && m_DecisionRequested)
             {
@@ -49,6 +49,7 @@ namespace Unity.MLAgents.Policies
                 m_ActuatorManager.ApplyHeuristic(m_ActionBuffers);
             }
             m_DecisionRequested = false;
+			valueEstimate = 0f;
             return ref m_ActionBuffers;
         }
 
@@ -137,6 +138,11 @@ namespace Unity.MLAgents.Policies
                     sensor.GetCompressedObservation();
                 }
             }
+        }
+        
+        public void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum)
+        {
+            throw new NotImplementedException();
         }
     }
 }

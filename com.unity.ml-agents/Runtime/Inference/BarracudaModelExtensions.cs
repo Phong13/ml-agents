@@ -113,7 +113,7 @@ namespace Unity.MLAgents.Inference
         /// The Barracuda engine model for loading static parameters.
         /// </param>
         /// <returns>Array of the output tensor names of the model</returns>
-        public static string[] GetOutputNames(this Model model)
+        public static string[] GetOutputNames(this Model model, bool hasAction, bool hasValueEst, bool hasValueEstOptimizer)
         {
             var names = new List<string>();
 
@@ -122,6 +122,8 @@ namespace Unity.MLAgents.Inference
                 return names.ToArray();
             }
 
+            if (hasAction)
+            {
             if (model.HasContinuousOutputs())
             {
                 names.Add(model.ContinuousOutputName());
@@ -130,13 +132,21 @@ namespace Unity.MLAgents.Inference
             {
                 names.Add(model.DiscreteOutputName());
             }
+            }
+
+            if (hasValueEst) names.Add(TensorNames.ValueEstimateOutput);
+            if (hasValueEstOptimizer) names.Add(ModelRunner.ValueEstimateOutputOptimizer);
 
             var modelVersion = model.GetVersion();
-            var memory = (int)model.GetTensorByName(TensorNames.MemorySize)[0];
-            if (memory > 0)
-            {
-                names.Add(TensorNames.RecurrentOutput);
-            }
+            Tensor mt = model.GetTensorByName(TensorNames.MemorySize);
+			if (mt != null)
+			{
+				var memory = (int) mt[0];
+            	if (memory > 0)
+            	{
+                	names.Add(TensorNames.RecurrentOutput);
+            	}
+        	}
 
             names.Sort(StringComparer.InvariantCulture);
 

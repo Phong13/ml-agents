@@ -386,7 +386,7 @@ namespace Unity.MLAgents.Inference
             // If there is no Recurrent Output but the model is Recurrent.
             if (memory > 0)
             {
-                var allOutputs = model.GetOutputNames().ToList();
+                var allOutputs = model.memories.Select(x => x.output).ToList(); //Ian hacked this
                 if (!allOutputs.Any(x => x == TensorNames.RecurrentOutput))
                 {
                     failedModelChecks.Add(

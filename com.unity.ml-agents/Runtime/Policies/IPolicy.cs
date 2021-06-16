@@ -27,6 +27,14 @@ namespace Unity.MLAgents.Policies
         /// it must be taken now. The Brain is expected to update the actions
         /// of the Agents at this point the latest.
         /// </summary>
-        ref readonly ActionBuffers DecideAction();
+        ref readonly ActionBuffers DecideAction(out float valueEstimate);
+        /// <summary>
+        /// Signals the Brain that the Agent needs a Decision. The Policy
+        /// will make the decision at a later time to allow possible
+        /// batching of requests.
+        /// </summary>
+        /// <param name="info"></param>
+        /// <param name="sensors"></param>
+        void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum);
     }
 }

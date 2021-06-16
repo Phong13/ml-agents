@@ -28,7 +28,7 @@ namespace Unity.MLAgents
     /// <summary>
     /// Helper class to step the Academy during FixedUpdate phase.
     /// </summary>
-    internal class AcademyFixedUpdateStepper : MonoBehaviour
+    public class AcademyFixedUpdateStepper : MonoBehaviour
     {
         void FixedUpdate()
         {
@@ -243,6 +243,7 @@ namespace Unity.MLAgents
         /// </summary>
         Academy()
         {
+			numTimesEnvironmentStepCalled = 0;
             Application.quitting += Dispose;
 
             LazyInitialize();
@@ -294,7 +295,7 @@ namespace Unity.MLAgents
 
             m_StepperObject = new GameObject("AcademyFixedUpdateStepper");
             // Don't show this object in the hierarchy
-            m_StepperObject.hideFlags = HideFlags.HideInHierarchy;
+            // m_StepperObject.hideFlags = HideFlags.HideInHierarchy;
             m_FixedUpdateStepper = m_StepperObject.AddComponent<AcademyFixedUpdateStepper>();
             try
             {
@@ -489,6 +490,8 @@ namespace Unity.MLAgents
             AgentAct = () => { };
             AgentForceReset = () => { };
             OnEnvironmentReset = () => { };
+
+            AgentPrePreStep = i => { };
         }
 
         static void OnQuitCommandReceived()
@@ -555,6 +558,9 @@ namespace Unity.MLAgents
         /// </summary>
         public void EnvironmentStep()
         {
+            numTimesEnvironmentStepCalled++;
+            _fixedUpdateStepCount++;
+
             using (m_StepRecursionChecker.Start())
             {
                 if (!m_HadFirstReset)
@@ -562,7 +568,11 @@ namespace Unity.MLAgents
                     ForcedFullReset();
                 }
 
+                AgentPrePreStep?.Invoke(m_StepCount);
+
+                IsIn_AgentPreStep = true;
                 AgentPreStep?.Invoke(m_StepCount);
+                IsIn_AgentPreStep = false;
 
                 m_StepCount += 1;
                 m_TotalStepCount += 1;
@@ -669,6 +679,33 @@ namespace Unity.MLAgents
         internal bool IsStepperOwner(AcademyFixedUpdateStepper stepper)
         {
             return GameObject.ReferenceEquals(stepper.gameObject, Academy.Instance.m_StepperObject);
+        }
+
+        // ====================================
+        public static int numTimesEnvironmentStepCalled;
+
+        /// <summary>
+        /// So I can do stuff before any of the agents. Not for Agents
+        /// </summary>
+        public event Action<int> AgentPrePreStep;
+
+        public bool IsIn_AgentPreStep
+        {
+            get; private set;
+        }
+
+        System.Guid myGuid;
+
+        /// <summary>
+        /// This is created because we don't use the Academy StepCount. It is not stepped until after the environment is reset and some PreStep functions are called.
+        /// This makes for very messy step tracking.
+        /// </summary>
+        public int _fixedUpdateStepCount = 0;
+
+        bool IsInferenceOnlyTaggingComponentInScene()
+        {
+            if (GameObject.FindObjectOfType<Academy_AllAgentsInference>() == null) return false;
+            return true;
         }
     }
 }

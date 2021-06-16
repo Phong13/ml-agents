@@ -57,6 +57,7 @@ namespace Unity.MLAgents.Actuators
         /// <param name="discreteActions">The discrete actions to send to an <see cref="IActionReceiver"/>.</param>
         public ActionBuffers(ActionSegment<float> continuousActions, ActionSegment<int> discreteActions)
         {
+            valueEstimate = 0f;
             ContinuousActions = continuousActions;
             DiscreteActions = discreteActions;
         }
@@ -155,6 +156,20 @@ namespace Unity.MLAgents.Actuators
                 return (ContinuousActions.GetHashCode() * 397) ^ DiscreteActions.GetHashCode();
             }
         }
+
+        //-----------------------------------
+        public readonly float valueEstimate;
+
+        public ActionBuffers(float[] continuousActions, int[] discreteActions, float va)
+            : this(new ActionSegment<float>(continuousActions), new ActionSegment<int>(discreteActions), va) { }
+
+        public ActionBuffers(ActionSegment<float> continuousActions, ActionSegment<int> discreteActions, float ve)
+        {
+            valueEstimate = ve;
+            ContinuousActions = continuousActions;
+            DiscreteActions = discreteActions;
+        }
+        //-----------------------------------
     }
 
     /// <summary>

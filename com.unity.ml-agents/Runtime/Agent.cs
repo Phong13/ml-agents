@@ -65,7 +65,7 @@ namespace Unity.MLAgents
             storedActions.Clear();
         }
 
-        public void CopyActions(ActionBuffers actionBuffers)
+        public void CopyActions(ActionBuffers actionBuffers, out float ve)
         {
             var continuousActions = storedActions.ContinuousActions;
             for (var i = 0; i < actionBuffers.ContinuousActions.Length; i++)
@@ -77,6 +77,8 @@ namespace Unity.MLAgents
             {
                 discreteActions[i] = actionBuffers.DiscreteActions[i];
             }
+
+            ve = actionBuffers.valueEstimate;
         }
     }
 
@@ -204,14 +206,14 @@ namespace Unity.MLAgents
         /// easier. We will hook into the Serialization code and make sure that
         /// agentParameters.maxStep and this.maxStep are in sync.
         [Serializable]
-        internal struct AgentParameters
+        public struct AgentParameters
         {
             public int maxStep;
         }
 
         [SerializeField]
         [HideInInspector]
-        internal AgentParameters agentParameters;
+        public AgentParameters agentParameters;
         [SerializeField]
         [HideInInspector]
         internal bool hasUpgradedFromAgentParameters;
@@ -303,7 +305,12 @@ namespace Unity.MLAgents
 
         /// <summary>
         /// Set of DemonstrationWriters that the Agent will write its step information to.
-        /// If you use a DemonstrationRecorder component, this will automatically register its DemonstrationWriter.
+        /// If you use a DemonstrationRecorder comp
+        ///
+        ///
+        ///
+        ///
+        /// t, this will automatically register its DemonstrationWriter.
         /// You can also add your own DemonstrationWriter by calling
         /// DemonstrationRecorder.AddDemonstrationWriterToAgent()
         /// </summary>
@@ -563,14 +570,19 @@ namespace Unity.MLAgents
             m_Info.maxStepReached = doneReason == DoneReason.MaxStepReached;
             m_Info.groupId = m_GroupId;
             UpdateSensors();
-            // Make sure the latest observations are being passed to training.
-            using (m_CollectObservationsChecker.Start())
+
+            if (m_Brain is RemotePolicy)
             {
-                CollectObservations(collectObservationsSensor);
-            }
-            // Request the last decision with no callbacks
-            // We request a decision so Python knows the Agent is done immediately
-            m_Brain?.RequestDecision(m_Info, sensors);
+	            // Make sure the latest observations are being passed to training.
+	            using (m_CollectObservationsChecker.Start())
+	            {
+	                CollectObservations(collectObservationsSensor);
+	            }
+	            // Request the last decision with no callbacks
+	            // We request a decision so Python knows the Agent is done immediately
+	            if (modelNum == 0) m_Brain?.RequestDecision(m_Info, sensors);
+				else m_Brain?.RequestDecision(m_Info, sensors, modelNum);
+			}
 
             // We also have to write any to any DemonstationStores so that they get the "done" flag.
             if (DemonstrationWriters.Count != 0)
@@ -629,7 +641,10 @@ namespace Unity.MLAgents
                 // If everything is the same, don't make any changes.
                 return;
             }
-            NotifyAgentDone(DoneReason.Disabled);
+            if (m_Brain is RemotePolicy)
+            {
+            	NotifyAgentDone(DoneReason.Disabled);
+			}
             m_PolicyFactory.Model = model;
             m_PolicyFactory.InferenceDevice = inferenceDevice;
             m_PolicyFactory.BehaviorName = behaviorName;
@@ -764,7 +779,7 @@ namespace Unity.MLAgents
         /// </remarks>
         /// <seealso cref="OnEpisodeBegin"/>
         /// <seealso cref="EpisodeInterrupted"/>
-        public void EndEpisode()
+        public virtual void EndEpisode()
         {
             EndEpisodeAndReset(DoneReason.DoneCalled);
         }
@@ -815,6 +830,7 @@ namespace Unity.MLAgents
         /// </remarks>
         public void RequestDecision()
         {
+			modelNum = 0;
             m_RequestDecision = true;
             RequestAction();
         }
@@ -1067,7 +1083,8 @@ namespace Unity.MLAgents
             }
             else
             {
-                m_Info.CopyActions(m_ActuatorManager.StoredActions);
+				float ve;
+                m_Info.CopyActions(m_ActuatorManager.StoredActions, out ve);
             }
 
             UpdateSensors();
@@ -1354,8 +1371,10 @@ namespace Unity.MLAgents
             {
                 ResetData();
             }
-            var actions = m_Brain?.DecideAction() ?? new ActionBuffers();
-            m_Info.CopyActions(actions);
+
+            float ve = 0f;
+            var actions = m_Brain?.DecideAction(out ve) ?? new ActionBuffers();
+            m_Info.CopyActions(actions, out m_valueEstimate);
             m_ActuatorManager.UpdateActions(actions);
         }
 
@@ -1377,6 +1396,56 @@ namespace Unity.MLAgents
                     throw new UnityAgentsException("Agent is already registered with a group. Unregister it first.");
                 }
             }
+        }
+
+        //====================================================
+        /// <summary>
+        /// 0 for the policy
+        /// 1 for the value est
+        /// </summary>
+        int modelNum;
+
+        public bool IsDone()
+        {
+            return m_Info.done;
+        }
+
+        float m_valueEstimate = 0f;
+
+        public float GetValueEstimate()
+        {
+            if (m_PolicyFactory.BehaviorType != BehaviorType.InferenceOnly)
+            {
+                Debug.LogError("Hacked in value estimate shoudl only be used for InferenceOnlyAgents. Not implemented for communicator agents.");
+            }
+
+            return m_valueEstimate;
+        }
+
+        public BehaviorParameters GetBehaviourParameters()
+        {
+            if (m_PolicyFactory == null) m_PolicyFactory = GetComponent<BehaviorParameters>();
+            return m_PolicyFactory;
+        }
+
+        public void CancelRequestDecision()
+        {
+            //Debug.Assert(Academy.Instance.IsIn_AgentPreStep, "CancelRequestDecision should only be called from Academy.AgentPreStep");
+            m_RequestDecision = false;
+            CancelRequestAction();
+        }
+
+        public void CancelRequestAction()
+        {
+            //Debug.Assert(Academy.Instance.IsIn_AgentPreStep, "CancelRequestAction should only be called from Academy.AgentPreStep");
+            m_RequestAction = false;
+        }
+
+        public void RequestDecision(int model)
+        {
+            m_RequestDecision = true;
+            RequestAction();
+            modelNum = model;
         }
     }
 }

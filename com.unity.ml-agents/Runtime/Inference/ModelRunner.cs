@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Unity.Barracuda;
 using UnityEngine.Profiling;
@@ -82,6 +83,13 @@ namespace Unity.MLAgents.Inference
                     }
                 }
 
+                {
+                    hasValueEst = barracudaModel.outputs.Contains("value_estimate");
+                    hasPolicy = barracudaModel.outputs.Contains("action");
+                    hasValueEstOptimizer = barracudaModel.outputs.Contains("optimizer/value_estimate");
+                    UnityEngine.Debug.Log("Created model: " + model.name + " hasValue:" + hasValueEst + " hasPolicy: " + hasPolicy + " hasValueEstOptimizer: " + hasValueEstOptimizer);
+                }
+
                 WorkerFactory.Type executionDevice;
                 switch (inferenceDevice)
                 {
@@ -105,10 +113,14 @@ namespace Unity.MLAgents.Inference
             {
                 barracudaModel = null;
                 m_Engine = null;
+                hasPolicy = false;
+                hasValueEst = false;
+                hasValueEstOptimizer = false;
+                UnityEngine.Debug.LogError("Should not be creating a Barracuda ModelRunner if model was null ");
             }
 
             m_InferenceInputs = barracudaModel.GetInputTensors();
-            m_OutputNames = barracudaModel.GetOutputNames();
+            m_OutputNames = barracudaModel.GetOutputNames(hasPolicy, hasValueEst, hasValueEstOptimizer);
             m_TensorGenerator = new TensorGenerator(
                 seed, m_TensorAllocator, m_Memories, barracudaModel);
             m_TensorApplier = new TensorApplier(
@@ -171,12 +183,14 @@ namespace Unity.MLAgents.Inference
             if (!m_LastActionsReceived.ContainsKey(info.episodeId))
             {
                 m_LastActionsReceived[info.episodeId] = ActionBuffers.Empty;
+				m_lastValueEstimate[info.episodeId] = 0f;
             }
             if (info.done)
             {
                 // If the agent is done, we remove the key from the last action dictionary since no action
                 // should be taken.
                 m_LastActionsReceived.Remove(info.episodeId);
+				m_lastValueEstimate.Remove(info.episodeId);
             }
         }
 
@@ -220,6 +234,37 @@ namespace Unity.MLAgents.Inference
             Profiler.BeginSample($"ApplyTensors");
             // Update the outputs
             m_TensorApplier.ApplyTensors(m_InferenceOutputs, m_OrderedAgentsRequestingDecisions, m_LastActionsReceived);
+
+            {
+                // Hack to put the valueEstimate back in
+                TensorProxy valueEstimateTensor = null;
+                for (int i = 0; i < m_InferenceOutputs.Count; i++)
+                {
+                    if (hasValueEst && m_InferenceOutputs[i].name.Equals(TensorNames.ValueEstimateOutput))
+                    {
+                        valueEstimateTensor = m_InferenceOutputs[i];
+                    }
+                    else if (hasValueEstOptimizer && m_InferenceOutputs[i].name.Equals(ValueEstimateOutputOptimizer))
+                    {
+                        valueEstimateTensor = m_InferenceOutputs[i];
+                    }
+                }
+
+                if (hasValueEstOptimizer || hasValueEstOptimizer) UnityEngine.Debug.Assert(valueEstimateTensor != null, "Supposed to have value estimate but doesn't " + m_Model);
+                if (valueEstimateTensor != null)
+                {
+                    UnityEngine.Debug.Assert(m_OrderedAgentsRequestingDecisions.Count == m_Infos.Count, "Should be same");
+                    for (int i = 0; i < m_OrderedAgentsRequestingDecisions.Count; i++)
+                    {
+                        // it is correct to be using i to lookup value in tensor and m_OrderedAgentsRequestingDecisions[i] to cache value in m_lastValueEstimate
+                        Tensor d = valueEstimateTensor.data;
+                        //UnityEngine.Debug.Log("Reading value count: " + m_Infos.Count + "  idx:" + i + " val: " + valueEstimateTensor.data + 
+                        //    "  [" + d.batch + "," + d.width + ", " + d.height + "," + d.channels + "] leng: "+ valueEstimateTensor.shape.Length + "   estimate: " + valueEstimateTensor.data[0, 0, 0, 0]);
+                        //UnityEngine.Debug.Log(m_Model.name + " getting value estimate from model: " + valueEstimateTensor.data[i, 0]);
+                        m_lastValueEstimate[m_OrderedAgentsRequestingDecisions[i]] = valueEstimateTensor.data[i, 0];
+                    }
+                }
+            }
             Profiler.EndSample();
 
             Profiler.EndSample(); // end name
@@ -243,5 +288,26 @@ namespace Unity.MLAgents.Inference
             }
             return ActionBuffers.Empty;
         }
+
+        Dictionary<int, float> m_lastValueEstimate = new Dictionary<int, float>();
+        public ActionBuffers GetAction(int agentId, out float valueEstimate)
+        {
+            if (m_LastActionsReceived.ContainsKey(agentId))
+            {
+                valueEstimate = m_lastValueEstimate[agentId];
+                return m_LastActionsReceived[agentId];
+            }
+            else
+            {
+                valueEstimate = 0f;
+                return ActionBuffers.Empty;
+            }
+        }
+
+        bool hasPolicy;
+        bool hasValueEst;
+        bool hasValueEstOptimizer;
+
+        public const string ValueEstimateOutputOptimizer = "optimizer/value_estimate";
     }
 }

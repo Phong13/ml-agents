@@ -62,16 +62,22 @@ namespace Unity.MLAgents.Policies
         }
 
         /// <inheritdoc />
-        public ref readonly ActionBuffers DecideAction()
+        public ref readonly ActionBuffers DecideAction(out float valueEstimate)
         {
             m_Communicator?.DecideBatch();
             var actions = m_Communicator?.GetActions(m_FullyQualifiedBehaviorName, m_AgentId);
             m_LastActionBuffer = actions == null ? ActionBuffers.Empty : (ActionBuffers)actions;
+			valueEstimate = 0f;
             return ref m_LastActionBuffer;
         }
 
         public void Dispose()
         {
         }
+        
+         public void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum)
+        {
+            throw new System.NotImplementedException("Remote policy does not support models other than the Policy");
+        } 
     }
 }

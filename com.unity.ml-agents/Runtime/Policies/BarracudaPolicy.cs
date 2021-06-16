@@ -41,8 +41,12 @@ namespace Unity.MLAgents.Policies
     /// </summary>
     internal class BarracudaPolicy : IPolicy
     {
-        protected ModelRunner m_ModelRunner;
+        protected ModelRunner m_ModelRunnerPolicy;
+        protected ModelRunner m_ModelRunnerValueEst;
+        protected ModelRunner m_ModelRunnerPolicyAndValueEst;
         ActionBuffers m_LastActionBuffer;
+
+        int _modelNum;
 
         int m_AgentId;
 
@@ -76,13 +80,25 @@ namespace Unity.MLAgents.Policies
         public BarracudaPolicy(
             ActionSpec actionSpec,
             IList<IActuator> actuators,
-            NNModel model,
+            NNModel modelPolicy,
+            NNModel modelValueEst,
+            NNModel modelPolicyAndValueEst,
             InferenceDevice inferenceDevice,
             string behaviorName
         )
         {
-            var modelRunner = Academy.Instance.GetOrCreateModelRunner(model, actionSpec, inferenceDevice);
-            m_ModelRunner = modelRunner;
+            //var modelRunner = Academy.Instance.GetOrCreateModelRunner(model, actionSpec, inferenceDevice);
+            //m_ModelRunnerPolicy = modelRunner;
+            m_ModelRunnerPolicy = Academy.Instance.GetOrCreateModelRunner(modelPolicy, actionSpec, inferenceDevice);
+            if (modelValueEst != null)
+            {
+                m_ModelRunnerValueEst = Academy.Instance.GetOrCreateModelRunner(modelValueEst, actionSpec, inferenceDevice);
+            }
+            if (modelPolicyAndValueEst != null)
+            {
+                m_ModelRunnerPolicyAndValueEst = Academy.Instance.GetOrCreateModelRunner(modelPolicyAndValueEst, actionSpec, inferenceDevice);
+            }
+            
             m_BehaviorName = behaviorName;
             m_ActionSpec = actionSpec;
             m_Actuators = actuators;
@@ -93,7 +109,40 @@ namespace Unity.MLAgents.Policies
         {
             SendAnalytics(sensors);
             m_AgentId = info.episodeId;
-            m_ModelRunner?.PutObservations(info, sensors);
+            ModelRunner mr;
+            if (_modelNum == 0) mr = m_ModelRunnerPolicy;
+            else if (_modelNum == 1) mr = m_ModelRunnerValueEst;
+            else mr = m_ModelRunnerPolicyAndValueEst;
+            mr?.PutObservations(info, sensors);
+            _modelNum = 0;
+        }
+
+        /// <inheritdoc />
+        public void RequestDecision(AgentInfo info, List<ISensor> sensors, int modelNum)
+        {
+            SendAnalytics(sensors);
+            m_AgentId = info.episodeId;
+            if (modelNum == 0)
+            {
+                m_ModelRunnerPolicy?.PutObservations(info, sensors);
+                _modelNum = 0;
+            }
+            else if (modelNum == 1)
+            {
+                UnityEngine.Debug.Assert(m_ModelRunnerValueEst != null, "Should do inference if no value est model");
+                m_ModelRunnerValueEst.PutObservations(info, sensors);
+                _modelNum = 1;
+            }
+            else if (modelNum == 2)
+            {
+                UnityEngine.Debug.Assert(m_ModelRunnerPolicyAndValueEst != null, "Should do inference if no value est model");
+                m_ModelRunnerPolicyAndValueEst.PutObservations(info, sensors);
+                _modelNum = 2;
+            }
+            else
+            {
+                UnityEngine.Debug.Assert(false);
+            }
         }
 
         [Conditional("MLA_UNITY_ANALYTICS_MODULE")]
@@ -103,9 +152,9 @@ namespace Unity.MLAgents.Policies
             {
                 m_AnalyticsSent = true;
                 Analytics.InferenceAnalytics.InferenceModelSet(
-                    m_ModelRunner.Model,
+                    m_ModelRunnerPolicy.Model,
                     m_BehaviorName,
-                    m_ModelRunner.InferenceDevice,
+                    m_ModelRunnerPolicy.InferenceDevice,
                     sensors,
                     m_ActionSpec,
                     m_Actuators
@@ -114,16 +163,22 @@ namespace Unity.MLAgents.Policies
         }
 
         /// <inheritdoc />
-        public ref readonly ActionBuffers DecideAction()
+        public ref readonly ActionBuffers DecideAction(out float valueEstimate)
         {
-            if (m_ModelRunner == null)
+            ModelRunner mr;
+            if (_modelNum == 0) mr = m_ModelRunnerPolicy;
+            else if (_modelNum == 1) mr = m_ModelRunnerValueEst;
+            else mr = m_ModelRunnerPolicyAndValueEst;
+                    	
+            if (mr == null)
             {
+                valueEstimate = 0f;
                 m_LastActionBuffer = ActionBuffers.Empty;
             }
             else
             {
-                m_ModelRunner?.DecideBatch();
-                m_LastActionBuffer = m_ModelRunner.GetAction(m_AgentId);
+                mr?.DecideBatch();
+                m_LastActionBuffer = mr.GetAction(m_AgentId, out valueEstimate);
             }
             return ref m_LastActionBuffer;
         }
